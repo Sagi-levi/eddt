@@ -304,6 +304,14 @@ func fieldInfoFromIdent(pkg *packages.Package, allPkgs []*packages.Package, name
 	// Check for struct reference or named primitive
 	obj := pkg.TypesInfo.ObjectOf(ident)
 	if obj != nil {
+		// An alias declared in a package is another spelling of a type, so
+		// resolve that type. Taking the alias by its own name would look for a
+		// struct declaration that does not exist and emit helpers nobody
+		// generates. The universe aliases byte, rune and any keep the paths
+		// below.
+		if tn, ok := obj.(*types.TypeName); ok && tn.IsAlias() && obj.Pkg() != nil {
+			return fieldInfoFromType(pkg, allPkgs, name, types.Unalias(obj.Type()), isPointer, queue, processed)
+		}
 		if _, ok := obj.Type().Underlying().(*types.Struct); ok {
 			structPkgPath := pkg.PkgPath
 			structPkgName := pkg.Name

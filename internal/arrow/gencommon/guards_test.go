@@ -181,3 +181,57 @@ func TestParse_MarshalWithoutUnmarshalHasNoInverse(t *testing.T) {
 		}
 	}
 }
+
+const fixtureAliasCode = `package model
+
+import "time"
+
+type Local struct {
+	A int64
+}
+
+type LocalAlias = Local
+
+type TimeAlias = time.Time
+
+type Aliased struct {
+	L LocalAlias
+	T TimeAlias
+	P *LocalAlias
+}
+`
+
+// TestParse_ResolvesAliasesToTheirTypes checks that an alias to a struct
+// resolves to that struct's helpers and an alias to time.Time to the
+// timestamp mapping, instead of to helpers named after the alias that
+// nothing generates.
+func TestParse_ResolvesAliasesToTheirTypes(t *testing.T) {
+	modDir := writeModelFixture(t, fixtureAliasCode)
+	_, _, structs, err := Parse([]string{modDir}, []string{"Aliased"}, false)
+	if err != nil {
+		t.Fatalf("Parse() returned error: %v", err)
+	}
+	names := map[string]bool{}
+	var aliased *StructInfo
+	for i := range structs {
+		names[structs[i].Name] = true
+		if structs[i].Name == "Aliased" {
+			aliased = &structs[i]
+		}
+	}
+	if aliased == nil || len(aliased.Fields) != 3 {
+		t.Fatalf("Aliased = %+v, want three fields", aliased)
+	}
+	if f := aliased.Fields[0]; !f.IsStruct || f.StructName != "Local" || f.IsPointer {
+		t.Errorf("L = %+v, want a value struct named Local", f)
+	}
+	if f := aliased.Fields[1]; f.TimeExpr == "" || f.ArrowType != "arrow.FixedWidthTypes.Timestamp_us" {
+		t.Errorf("T = %+v, want the Timestamp_us mapping", f)
+	}
+	if f := aliased.Fields[2]; !f.IsStruct || f.StructName != "Local" || !f.IsPointer {
+		t.Errorf("P = %+v, want a pointer struct named Local", f)
+	}
+	if !names["Local"] || names["LocalAlias"] {
+		t.Errorf("structs = %v, want Local and no LocalAlias", names)
+	}
+}
