@@ -395,7 +395,83 @@ func Parse(inputPkgs, targetStructs []string, verbose bool) (string, string, []S
 		}
 	}
 
+	if err := checkRecursion(results); err != nil {
+		return "", "", nil, err
+	}
+
 	return parsedPkgName, parsedPkgPath, results, nil
+}
+
+// checkRecursion returns an error when a struct refers to itself through its
+// fields, directly or by way of other structs. An Arrow schema cannot
+// describe a recursive type, and the generated schema constructor would call
+// itself until the stack overflows.
+func checkRecursion(structs []StructInfo) error {
+	refs := map[string][]string{}
+	for _, si := range structs {
+		var walk func(fi *FieldInfo)
+		walk = func(fi *FieldInfo) {
+			if fi.IsStruct && fi.StructName != "" {
+				refs[si.Name] = append(refs[si.Name], fi.StructName)
+			}
+			if fi.EltInfo != nil {
+				walk(fi.EltInfo)
+			}
+			if fi.KeyInfo != nil {
+				walk(fi.KeyInfo)
+			}
+		}
+		for i := range si.Fields {
+			walk(&si.Fields[i])
+		}
+	}
+
+	const (
+		unvisited = iota
+		visiting
+		done
+	)
+	state := map[string]int{}
+	var path []string
+	var visit func(name string) error
+	visit = func(name string) error {
+		switch state[name] {
+		case visiting:
+			return fmt.Errorf("struct %s refers to itself through %s, and an Arrow schema cannot be recursive", name, strings.Join(append(path, name), " -> "))
+		case done:
+			return nil
+		}
+		state[name] = visiting
+		path = append(path, name)
+		for _, next := range refs[name] {
+			if err := visit(next); err != nil {
+				return err
+			}
+		}
+		path = path[:len(path)-1]
+		state[name] = done
+		return nil
+	}
+	for _, si := range structs {
+		if err := visit(si.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CheckEmpty returns an error when a struct ends up with no fields, either
+// because it declares none or because every field was skipped. Parquet
+// cannot store a struct without children, and the reader the generators emit
+// for one does not compile. Both generators call it before templating, so
+// Parse itself stays usable for inspecting a struct that resolves to nothing.
+func CheckEmpty(structs []StructInfo) error {
+	for _, si := range structs {
+		if len(si.Fields) == 0 {
+			return fmt.Errorf("struct %s has no field the generators can map, and Parquet cannot store a struct without fields", si.Name)
+		}
+	}
+	return nil
 }
 
 // resolveEmbeddedFields resolves an embedded struct field and returns its

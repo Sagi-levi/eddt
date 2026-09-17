@@ -151,8 +151,8 @@ func fieldInfoFromExpr(pkg *packages.Package, allPkgs []*packages.Package, name 
 			if err != nil {
 				return FieldInfo{}, fmt.Errorf("map key %w", err)
 			}
-			if keyInfo.IsStruct {
-				return FieldInfo{}, fmt.Errorf("map key type must not be a struct")
+			if err := checkMapKey(keyInfo); err != nil {
+				return FieldInfo{}, err
 			}
 			valInfo, err := fieldInfoFromExpr(pkg, allPkgs, "", mapType.Value, queue, processed)
 			if err != nil {
@@ -198,6 +198,9 @@ func fieldInfoFromExpr(pkg *packages.Package, allPkgs []*packages.Package, name 
 			if !ok || lit.Kind != token.INT {
 				return FieldInfo{}, fmt.Errorf("fixed-size array length must be an integer literal")
 			}
+			if lit.Value == "0" {
+				return FieldInfo{}, fmt.Errorf("zero-length arrays are not supported, Arrow rejects a fixed-size list of size 0")
+			}
 
 			// []byte special case does not apply to [N]byte — treat as fixed-size list of uint8.
 			eltInfo, err := fieldInfoFromExpr(pkg, allPkgs, "", t.Elt, queue, processed)
@@ -227,8 +230,8 @@ func fieldInfoFromExpr(pkg *packages.Package, allPkgs []*packages.Package, name 
 		if err != nil {
 			return FieldInfo{}, fmt.Errorf("map key %w", err)
 		}
-		if keyInfo.IsStruct {
-			return FieldInfo{}, fmt.Errorf("struct maps keys are not supported")
+		if err := checkMapKey(keyInfo); err != nil {
+			return FieldInfo{}, err
 		}
 
 		valInfo, err := fieldInfoFromExpr(pkg, allPkgs, "", t.Value, queue, processed)
@@ -546,8 +549,8 @@ func fieldInfoFromType(pkg *packages.Package, allPkgs []*packages.Package, name 
 		if err != nil {
 			return FieldInfo{}, fmt.Errorf("map key: %w", err)
 		}
-		if keyInfo.IsStruct {
-			return FieldInfo{}, fmt.Errorf("struct map keys are not supported")
+		if err := checkMapKey(keyInfo); err != nil {
+			return FieldInfo{}, err
 		}
 
 		valInfo, err := fieldInfoFromType(pkg, allPkgs, "", t.Elem(), false, queue, processed)
@@ -558,6 +561,9 @@ func fieldInfoFromType(pkg *packages.Package, allPkgs []*packages.Package, name 
 		return buildMapFieldInfo(name, keyInfo, valInfo, isPointer), nil
 
 	case *types.Array:
+		if t.Len() == 0 {
+			return FieldInfo{}, fmt.Errorf("zero-length arrays are not supported, Arrow rejects a fixed-size list of size 0")
+		}
 		eltInfo, err := fieldInfoFromType(pkg, allPkgs, "", t.Elem(), false, queue, processed)
 		if err != nil {
 			return FieldInfo{}, fmt.Errorf("array element: %w", err)
@@ -754,6 +760,17 @@ func detectMarshalMethod(typ types.Type) string {
 		return "MarshalBinary"
 	}
 	return ""
+}
+
+// checkMapKey rejects a map key the generated code cannot append or read
+// back. Only a basic type, or a named type over one, works as a key: a
+// struct, pointer, array, marshaled or time key produces code that does not
+// compile.
+func checkMapKey(key FieldInfo) error {
+	if key.IsStruct || key.IsPointer || key.IsList || key.IsMap || key.IsFixedSizeList || key.MarshalMethod != "" || key.TimeExpr != "" || key.ConvertMethod != "" {
+		return fmt.Errorf("map key type %s is not supported, a key must be a basic type", key.GoType)
+	}
+	return nil
 }
 
 // marshalMethodArrowType returns the Arrow type and builder for a given marshal method.

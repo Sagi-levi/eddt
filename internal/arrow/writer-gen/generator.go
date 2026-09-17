@@ -87,6 +87,9 @@ func (g *Generator) Run(outPkgNameOverride string) error {
 	if err != nil {
 		return err
 	}
+	if err := gencommon.CheckEmpty(structs); err != nil {
+		return err
+	}
 
 	// Elide schema helpers already declared by companion files in the output package.
 	// See internal/arrow/gencommon/output_scan.go for semantics and limitations.
