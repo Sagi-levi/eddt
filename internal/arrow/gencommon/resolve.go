@@ -175,10 +175,11 @@ func fieldInfoFromExpr(pkg *packages.Package, allPkgs []*packages.Package, name 
 			fi.EltInfo = &innerCopy
 			// Clear method fields inherited from the inner *T FieldInfo: the outer
 			// **T is not directly marshallable. The template discriminant for **T is
-			// IsPointer+EltInfo (not MarshalMethod/ConvertMethod), so these must be
-			// empty to route to the correct EltInfo dereference path.
+			// IsPointer+EltInfo (not MarshalMethod/ConvertMethod/TimeExpr), so these
+			// must be empty to route to the correct EltInfo dereference path.
 			fi.MarshalMethod = ""
 			fi.ConvertMethod = ""
+			fi.TimeExpr = ""
 			fi.CastType = ""
 			return fi, nil
 		}
@@ -633,20 +634,22 @@ func resolveWellKnownType(name string, named *types.Named, isPointer bool) (Fiel
 
 	if pkgPath == "time" && typeName == "Time" {
 		goType := "time.Time"
+		timeExpr := "%s"
 		if isPointer {
 			goType = "*time.Time"
+			timeExpr = "*%s"
 		}
 		return FieldInfo{
 			Name:               name,
 			GoType:             goType,
-			ArrowType:          "arrow.FixedWidthTypes.Timestamp_ns",
+			ArrowType:          "arrow.FixedWidthTypes.Timestamp_us",
 			ArrowBuilder:       "*array.TimestampBuilder",
 			CastType:           "arrow.Timestamp",
-			ConvertMethod:      "UnixNano",
+			TimeExpr:           timeExpr,
 			IsPointer:          isPointer,
 			ArrowArrayType:     "*array.Timestamp",
 			ValueMethod:        "Value",
-			ConvertBackExpr:    "time.Unix(0, int64(%s))",
+			ConvertBackExpr:    "time.UnixMicro(int64(%s))",
 			ConvertBackImports: []string{"time"},
 			ZeroExpr:           "time.Time{}",
 		}, true
@@ -690,14 +693,14 @@ func resolveWellKnownType(name string, named *types.Named, isPointer bool) (Fiel
 		return FieldInfo{
 			Name:               name,
 			GoType:             goType,
-			ArrowType:          "arrow.FixedWidthTypes.Timestamp_ns",
+			ArrowType:          "arrow.FixedWidthTypes.Timestamp_us",
 			ArrowBuilder:       "*array.TimestampBuilder",
 			CastType:           "arrow.Timestamp",
-			ConvertMethod:      "AsTime().UnixNano",
+			TimeExpr:           "%s.AsTime()",
 			IsPointer:          isPointer,
 			ArrowArrayType:     "*array.Timestamp",
 			ValueMethod:        "Value",
-			ConvertBackExpr:    "timestamppb.New(time.Unix(0, int64(%s)))",
+			ConvertBackExpr:    "timestamppb.New(time.UnixMicro(int64(%s)))",
 			ConvertBackIsPtr:   true,
 			ConvertBackImports: []string{"time", "google.golang.org/protobuf/types/known/timestamppb"},
 			ZeroExpr:           zeroExpr,

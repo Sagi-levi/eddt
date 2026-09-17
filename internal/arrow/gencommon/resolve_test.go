@@ -215,7 +215,7 @@ type ReaderFieldsStruct struct {
 		{"Inner", "*array.Struct", "", "", "", false, "Inner{}"},
 		{"OptInner", "*array.Struct", "", "", "", false, "nil"},
 		{"Elapsed", "*array.Int64", "Value", "", "time.Duration(%s)", false, "0"},
-		{"Birthday", "*array.Timestamp", "Value", "", "time.Unix(0, int64(%s))", false, "time.Time{}"},
+		{"Birthday", "*array.Timestamp", "Value", "", "time.UnixMicro(int64(%s))", false, "time.Time{}"},
 		{"Addr", "*array.String", "Value", "UnmarshalText", "", false, "netip.Addr{}"},
 		{"OptAddr", "*array.String", "Value", "UnmarshalText", "", false, "nil"},
 	}

@@ -150,6 +150,16 @@ func (w *{{.Name}}ArrowWriter) NewRecordBatch() arrow.RecordBatch {
 	}
 	{{- end}}
 	{{- end}}
+{{- else if $info.TimeExpr}}
+	{{- if $info.IsPointer}}
+	if {{$var}} == nil {
+		{{$bldr}}.(*array.TimestampBuilder).AppendNull()
+	} else {
+		{{- template "appendTimestamp" dict "Bldr" $bldr "Time" (printf $info.TimeExpr $var)}}
+	}
+	{{- else}}
+	{{- template "appendTimestamp" dict "Bldr" $bldr "Time" (printf $info.TimeExpr $var)}}
+	{{- end}}
 {{- else if $info.ConvertMethod}}
 	{{- if $info.IsPointer}}
 	if {{$var}} == nil {
@@ -178,4 +188,14 @@ func (w *{{.Name}}ArrowWriter) NewRecordBatch() arrow.RecordBatch {
 	{{$bldr}}.({{$info.ArrowBuilder}}).Append({{$info.CastType}}({{$var}}))
 	{{- end}}
 {{- end}}
+{{- end}}
+
+{{- define "appendTimestamp"}}
+	// Timestamp_us holds roughly 292,000 years either side of 1970, the zero
+	// time.Time included. An instant outside that is written as null.
+	if t := {{.Time}}; t.Before(time.UnixMicro(math.MinInt64)) || t.After(time.UnixMicro(math.MaxInt64)) {
+		{{.Bldr}}.(*array.TimestampBuilder).AppendNull()
+	} else {
+		{{.Bldr}}.(*array.TimestampBuilder).Append(arrow.Timestamp(t.UnixMicro()))
+	}
 {{- end}}

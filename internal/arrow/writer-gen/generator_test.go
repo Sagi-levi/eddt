@@ -565,9 +565,10 @@ type Event struct {
 			mustContain: []string{
 				`{Name: "CreatedAt",`,
 				"TimestampBuilder",
-				"Timestamp_ns",
-				".UnixNano()",
-				"arrow.Timestamp(",
+				"Timestamp_us",
+				"t := row.CreatedAt; t.Before(time.UnixMicro(math.MinInt64))",
+				"arrow.Timestamp(t.UnixMicro())",
+				"AppendNull",
 			},
 			mustNotContain: []string{
 				"MarshalText",
@@ -590,7 +591,7 @@ type Event struct {
 			mustContain: []string{
 				`{Name: "DeletedAt",`,
 				"TimestampBuilder",
-				".UnixNano()",
+				"t := *row.DeletedAt; t.Before(time.UnixMicro(math.MinInt64))",
 				"AppendNull",
 			},
 			mustNotContain: []string{
@@ -1532,8 +1533,8 @@ type Event struct {
 			mustContain: []string{
 				`{Name: "CreatedAt",`,
 				"TimestampBuilder",
-				"Timestamp_ns",
-				".AsTime().UnixNano()",
+				"Timestamp_us",
+				"t := row.CreatedAt.AsTime(); t.Before(time.UnixMicro(math.MinInt64))",
 				"arrow.Timestamp(",
 				"AppendNull",
 			},
@@ -1558,12 +1559,12 @@ type Event struct {
 			mustContain: []string{
 				`{Name: "CreatedAt",`,
 				"TimestampBuilder",
-				".AsTime().UnixNano()",
+				"t := row.CreatedAt.AsTime(); t.Before(time.UnixMicro(math.MinInt64))",
+				"AppendNull",
 			},
 			mustNotContain: []string{
 				"String()",
 				"StringBuilder",
-				"AppendNull",
 			},
 		},
 	}

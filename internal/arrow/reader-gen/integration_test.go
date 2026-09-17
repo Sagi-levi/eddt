@@ -1784,16 +1784,10 @@ func TestTimeTimeRoundTrip(t *testing.T) {
 	}
 
 	reader.LoadRow(1, &got)
-	if !got.When.Equal(time.Unix(0, 0).UTC()) {
-		// time.Time{}.UnixNano() is a large negative number; writer stores UnixNano,
-		// reader reconstructs via time.Unix(0, nano). Zero time round-trips to epoch.
-		// The writer converts time.Time{} → UnixNano → arrow.Timestamp. The reader
-		// converts back via time.Unix(0, int64(v)). So the zero value round-trips to
-		// what time.Unix(0, time.Time{}.UnixNano()) produces.
-		expected := time.Unix(0, time.Time{}.UnixNano())
-		if !got.When.Equal(expected) {
-			t.Errorf("row1 When: got %v, want %v", got.When, expected)
-		}
+	if !got.When.IsZero() {
+		// A microsecond column holds the zero time.Time, so it round-trips
+		// exactly: the writer stores the instant, the reader rebuilds it.
+		t.Errorf("row1 When: got %v, want the zero time", got.When)
 	}
 	if got.OptWhen != nil {
 		t.Errorf("row1 OptWhen: got %v, want nil", got.OptWhen)
@@ -2406,7 +2400,7 @@ func TestNullElementsInConvertList(t *testing.T) {
 
 	// Build an Arrow record manually with a null element inside a list.
 	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "Timestamps", Type: arrow.ListOf(arrow.FixedWidthTypes.Timestamp_ns), Nullable: true},
+		{Name: "Timestamps", Type: arrow.ListOf(arrow.FixedWidthTypes.Timestamp_us), Nullable: true},
 	}, nil)
 
 	bldr := array.NewRecordBuilder(pool, schema)
@@ -2419,9 +2413,9 @@ func TestNullElementsInConvertList(t *testing.T) {
 	t1 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	lb.Append(true)
-	vb.Append(arrow.Timestamp(t1.UnixNano()))
+	vb.Append(arrow.Timestamp(t1.UnixMicro()))
 	vb.AppendNull()
-	vb.Append(arrow.Timestamp(t2.UnixNano()))
+	vb.Append(arrow.Timestamp(t2.UnixMicro()))
 
 	// Row 1: list with [null]
 	lb.Append(true)
