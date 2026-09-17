@@ -2398,6 +2398,55 @@ func TestPointerElementsRoundTrip(t *testing.T) {
 		runInnerTest(t, tmpDir, testCode, "TestPointerElementsRoundTrip")
 	})
 
+	t.Run("list-of-maps-round-trip", func(t *testing.T) {
+		goCode := `package dummy
+
+type MapRows struct {
+	Maps  []map[string]int64
+	Deep  []map[string][]int64
+	Fixed [2]map[string]int64
+}
+`
+		tmpDir := setupIntegrationTest(t, goCode, []string{"MapRows"})
+
+		testCode := `package dummy
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+func TestListOfMapsRoundTrip(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	in := MapRows{
+		Maps:  []map[string]int64{{"a": 1, "b": 2}, {}, nil},
+		Deep:  []map[string][]int64{{"x": {1, 2}, "nil": nil}},
+		Fixed: [2]map[string]int64{{"k": 3}, nil},
+	}
+	writer := NewMapRowsArrowWriter(pool)
+	defer writer.Release()
+	writer.Append(&in)
+	rec := writer.NewRecordBatch()
+	defer rec.Release()
+
+	reader, err := NewMapRowsArrowReader(rec)
+	if err != nil {
+		t.Fatalf("NewMapRowsArrowReader: %v", err)
+	}
+	var got MapRows
+	reader.LoadRow(0, &got)
+	if !reflect.DeepEqual(got, in) {
+		t.Errorf("got %+v, want %+v", got, in)
+	}
+}
+`
+		runInnerTest(t, tmpDir, testCode, "TestListOfMapsRoundTrip")
+	})
+
 	t.Run("list-of-text-marshaler-round-trip", func(t *testing.T) {
 		goCode := `package dummy
 
