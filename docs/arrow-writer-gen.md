@@ -75,10 +75,16 @@ The generator has out-of-the-box native mappings for specialized standard
 library and Protobuf timestamp types:
 * `time.Duration`: Mapped precisely to an Int64 column (nanoseconds) for
   lossless Parquet compatibility.
-* `time.Time`: Mapped to a `Timestamp_ns` (UTC) column.
+* `time.Time`: Mapped to a `Timestamp_us` (UTC) column. Microseconds hold
+  roughly 292,000 years either side of 1970, so every instant a clock or a
+  protobuf message can carry fits, the zero `time.Time` included, and an
+  unset field reads back as the zero `time.Time`. Digits below a microsecond
+  are dropped. An instant outside even that range is written as null rather
+  than as a wrapped value.
 * `durationpb.Duration`: Processed safely with saturation arithmetic into an
   Int64 column (nanoseconds).
-* `timestamppb.Timestamp`: Mapped to a `Timestamp_ns` (UTC) column.
+* `timestamppb.Timestamp`: Mapped to a `Timestamp_us` (UTC) column, with the
+  same range and null rule as `time.Time`.
 
 ### Interface Fallbacks for External Types
 If a type originates from outside the provided input packages, the generator
