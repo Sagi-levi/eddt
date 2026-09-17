@@ -2,6 +2,7 @@ package gencommon
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -60,7 +61,7 @@ func TestParse_SkipsShapesTheOutputCannotCarry(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Skipping field Zero in Guarded: zero-length arrays are not supported",
-		"Skipping field ArrayKey in Guarded: map key type [2]uint8 is not supported",
+		"Skipping field ArrayKey in Guarded: map key type [2]byte is not supported",
 		"Skipping field PtrKey in Guarded: map key type *string is not supported",
 		"Skipping field TextKey in Guarded: map key type netip.Addr is not supported",
 		"Skipping field TimeKey in Guarded: map key type time.Time is not supported",
@@ -124,5 +125,59 @@ func TestCheckEmpty_RejectsEmptyStructs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "struct Empty has no field the generators can map") {
 		t.Errorf("error = %q", err)
+	}
+}
+
+const fixtureMarshalOnlyCode = `package model
+
+import "example.com/guards/model/other"
+
+type Record struct {
+	M  other.MarshalOnly
+	PM *other.MarshalOnly
+}
+`
+
+const fixtureMarshalOnlyOther = `package other
+
+type MarshalOnly struct {
+	V string
+}
+
+func (m MarshalOnly) MarshalText() ([]byte, error) {
+	return []byte(m.V), nil
+}
+`
+
+// TestParse_MarshalWithoutUnmarshalHasNoInverse checks that a type with
+// MarshalText and no UnmarshalText is recorded as write-only, so the reader
+// skips it instead of calling a method the type does not have.
+func TestParse_MarshalWithoutUnmarshalHasNoInverse(t *testing.T) {
+	modDir := writeModelFixture(t, fixtureMarshalOnlyCode)
+	otherDir := filepath.Join(modDir, "other")
+	if err := os.MkdirAll(otherDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "other.go"), []byte(fixtureMarshalOnlyOther), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modDir, "..", "go.mod"), []byte("module example.com/guards\n\ngo 1.25.0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, structs, err := Parse([]string{modDir}, []string{"Record"}, false)
+	if err != nil {
+		t.Fatalf("Parse() returned error: %v", err)
+	}
+	for _, f := range structs[0].Fields {
+		if f.MarshalMethod != "MarshalText" {
+			t.Errorf("%s: MarshalMethod = %q, want MarshalText", f.Name, f.MarshalMethod)
+		}
+		if f.UnmarshalMethod != "" {
+			t.Errorf("%s: UnmarshalMethod = %q, want none since the type has no UnmarshalText", f.Name, f.UnmarshalMethod)
+		}
+		if len(f.UnmarshalImports) != 0 {
+			t.Errorf("%s: UnmarshalImports = %v, want none", f.Name, f.UnmarshalImports)
+		}
 	}
 }

@@ -1040,6 +1040,10 @@ func capitalize(s string) string {
 }
 
 // buildMarshalFieldInfo constructs a FieldInfo for an external type resolved via marshal method.
+// The unmarshal inverse is recorded only when the type actually declares it,
+// so a type with MarshalText and no UnmarshalText is written and, like a
+// Stringer, skipped by the reader instead of getting a call that does not
+// compile.
 func buildMarshalFieldInfo(name string, typ types.Type, method string, isPointer bool) FieldInfo {
 	shortType, importPath := marshalGoTypeInfo(typ)
 	goType := shortType
@@ -1050,8 +1054,12 @@ func buildMarshalFieldInfo(name string, typ types.Type, method string, isPointer
 	if isPointer {
 		zeroExpr = "nil"
 	}
+	unmarshal := unmarshalForMarshal(method)
+	if unmarshal != "" && !hasMethod(typ, unmarshal) {
+		unmarshal = ""
+	}
 	var unmarshalImports []string
-	if importPath != "" && unmarshalForMarshal(method) != "" {
+	if importPath != "" && unmarshal != "" {
 		unmarshalImports = []string{importPath}
 	}
 	arrowType, arrowBuilder := marshalMethodArrowType(method)
@@ -1064,8 +1072,19 @@ func buildMarshalFieldInfo(name string, typ types.Type, method string, isPointer
 		IsPointer:        isPointer,
 		ArrowArrayType:   arrowArrayType(arrowBuilder),
 		ValueMethod:      "Value",
-		UnmarshalMethod:  unmarshalForMarshal(method),
+		UnmarshalMethod:  unmarshal,
 		ZeroExpr:         zeroExpr,
 		UnmarshalImports: unmarshalImports,
 	}
+}
+
+// hasMethod reports whether the pointer method set of typ has a method
+// with the given name. Struct fields are addressable, so the pointer set is
+// the one the generated code can call.
+func hasMethod(typ types.Type, name string) bool {
+	checkType := typ
+	if _, isPtr := typ.(*types.Pointer); !isPtr {
+		checkType = types.NewPointer(typ)
+	}
+	return types.NewMethodSet(checkType).Lookup(nil, name) != nil
 }

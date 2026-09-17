@@ -31,6 +31,18 @@ func (g *Generator) warnf(format string, args ...any) {
 	fmt.Fprintf(w, format, args...)
 }
 
+// writeOnlyMethod returns the marshal method of a field, or of the element a
+// list or map field eventually holds, when that method has no unmarshal
+// inverse, and the empty string when the field can be read back.
+func writeOnlyMethod(fi *gencommon.FieldInfo) string {
+	for f := fi; f != nil; f = f.EltInfo {
+		if f.MarshalMethod != "" && f.UnmarshalMethod == "" {
+			return f.MarshalMethod
+		}
+	}
+	return ""
+}
+
 // NewGenerator initializes a new Generator.
 func NewGenerator(inputPkgs []string, targetStructs []string, outPath string, verbose bool, pkgAliases []string) *Generator {
 	return &Generator{
@@ -83,6 +95,22 @@ func (g *Generator) Run(outPkgNameOverride string) error {
 		return err
 	}
 
+	// A field written through a marshal method that has no unmarshal inverse
+	// cannot be read back, whether it is the field itself or the element of a
+	// list or map it holds. Drop it here, before the template runs, so no
+	// column is looked up for it and no conversion is emitted for it.
+	for i := range structs {
+		kept := structs[i].Fields[:0]
+		for _, f := range structs[i].Fields {
+			if method := writeOnlyMethod(&f); method != "" {
+				g.warnf("Warning: field %s.%s uses %s() with no unmarshal inverse; skipping in reader\n", structs[i].Name, f.Name, method)
+				continue
+			}
+			kept = append(kept, f)
+		}
+		structs[i].Fields = kept
+	}
+
 	// Collect extra imports needed by ConvertBackExpr (e.g. "time", protobuf packages).
 	imports = gencommon.MergeImports(imports, gencommon.CollectConvertBackImports(structs))
 
@@ -90,15 +118,6 @@ func (g *Generator) Run(outPkgNameOverride string) error {
 	hasUnmarshal := gencommon.HasUnmarshalFields(structs)
 	if hasUnmarshal {
 		imports = gencommon.MergeImports(imports, gencommon.CollectUnmarshalImports(structs))
-	}
-
-	// Warn about Stringer-only fields (no unmarshal inverse).
-	for _, si := range structs {
-		for _, f := range si.Fields {
-			if f.MarshalMethod == "String" && f.UnmarshalMethod == "" {
-				g.warnf("Warning: field %s.%s uses String() with no unmarshal inverse; skipping in reader\n", si.Name, f.Name)
-			}
-		}
 	}
 
 	data := templateData{
