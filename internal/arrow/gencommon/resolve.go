@@ -38,8 +38,12 @@ func unmarshalForMarshal(method string) string {
 	}
 }
 
-// zeroExprForCast returns the Go zero-value expression for a given cast type.
-func zeroExprForCast(castType string) string {
+// zeroExprForCast returns the Go zero-value expression for a given cast type,
+// or nil when the field is a pointer to it.
+func zeroExprForCast(castType string, isPointer bool) string {
+	if isPointer {
+		return "nil"
+	}
 	switch castType {
 	case "string":
 		return `""`
@@ -324,7 +328,7 @@ func fieldInfoFromIdent(pkg *packages.Package, allPkgs []*packages.Package, name
 					IsPointer:      isPointer,
 					ArrowArrayType: arrowArrayType(arrowBuilder),
 					ValueMethod:    "Value",
-					ZeroExpr:       zeroExprForCast(castType),
+					ZeroExpr:       zeroExprForCast(castType, isPointer),
 					TypePkgPath:    pkgPathOf(obj),
 				}, nil
 			}
@@ -371,7 +375,7 @@ func fieldInfoFromIdent(pkg *packages.Package, allPkgs []*packages.Package, name
 		IsPointer:      isPointer,
 		ArrowArrayType: arrowArrayType(arrowBuilder),
 		ValueMethod:    "Value",
-		ZeroExpr:       zeroExprForCast(castType),
+		ZeroExpr:       zeroExprForCast(castType, isPointer),
 	}, nil
 }
 
@@ -596,7 +600,7 @@ func fieldInfoFromBasic(name string, basic *types.Basic, isPointer bool) (FieldI
 		ArrowBuilder: arrowBuilder, CastType: castType, IsPointer: isPointer,
 		ArrowArrayType: arrowArrayType(arrowBuilder),
 		ValueMethod:    "Value",
-		ZeroExpr:       zeroExprForCast(castType),
+		ZeroExpr:       zeroExprForCast(castType, isPointer),
 	}, nil
 }
 
@@ -614,8 +618,10 @@ func resolveWellKnownType(name string, named *types.Named, isPointer bool) (Fiel
 
 	if pkgPath == "time" && typeName == "Duration" {
 		goType := "time.Duration"
+		zeroExpr := "0"
 		if isPointer {
 			goType = "*time.Duration"
+			zeroExpr = "nil"
 		}
 		return FieldInfo{
 			Name:               name,
@@ -628,16 +634,18 @@ func resolveWellKnownType(name string, named *types.Named, isPointer bool) (Fiel
 			ValueMethod:        "Value",
 			ConvertBackExpr:    "time.Duration(%s)",
 			ConvertBackImports: []string{"time"},
-			ZeroExpr:           "0",
+			ZeroExpr:           zeroExpr,
 		}, true
 	}
 
 	if pkgPath == "time" && typeName == "Time" {
 		goType := "time.Time"
 		timeExpr := "%s"
+		zeroExpr := "time.Time{}"
 		if isPointer {
 			goType = "*time.Time"
 			timeExpr = "*%s"
+			zeroExpr = "nil"
 		}
 		return FieldInfo{
 			Name:               name,
@@ -651,7 +659,7 @@ func resolveWellKnownType(name string, named *types.Named, isPointer bool) (Fiel
 			ValueMethod:        "Value",
 			ConvertBackExpr:    "time.UnixMicro(int64(%s))",
 			ConvertBackImports: []string{"time"},
-			ZeroExpr:           "time.Time{}",
+			ZeroExpr:           zeroExpr,
 		}, true
 	}
 
@@ -827,15 +835,22 @@ func buildMapFieldInfo(name string, keyInfo, valInfo FieldInfo, isPointer bool) 
 }
 
 // buildFixedArrayFieldInfo constructs a FieldInfo for a fixed-size array from its resolved element.
+// An element that can be nil (a pointer, a slice or a map) is appended as a
+// null, so the element field must be nullable. Any other element is never
+// null, and the schema says so.
 func buildFixedArrayFieldInfo(name string, lenStr string, eltInfo FieldInfo, isPointer bool) FieldInfo {
 	goType := fmt.Sprintf("[%s]%s", lenStr, eltInfo.GoType)
 	if isPointer {
 		goType = "*" + goType
 	}
+	arrowType := fmt.Sprintf("arrow.FixedSizeListOfNonNullable(%s, %s)", lenStr, eltArrowType(eltInfo))
+	if eltInfo.IsPointer || eltInfo.IsList || eltInfo.IsMap {
+		arrowType = fmt.Sprintf("arrow.FixedSizeListOf(%s, %s)", lenStr, eltArrowType(eltInfo))
+	}
 	return FieldInfo{
 		Name:            name,
 		GoType:          goType,
-		ArrowType:       fmt.Sprintf("arrow.FixedSizeListOfNonNullable(%s, %s)", lenStr, eltArrowType(eltInfo)),
+		ArrowType:       arrowType,
 		ArrowBuilder:    "*array.FixedSizeListBuilder",
 		IsFixedSizeList: true,
 		FixedSizeLen:    lenStr,

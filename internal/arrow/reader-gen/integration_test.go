@@ -2307,6 +2307,97 @@ func TestUnmarshalErrorInElementZeroesIt(t *testing.T) {
 		runInnerTest(t, tmpDir, testCode, "TestUnmarshalErrorInElementZeroesIt")
 	})
 
+	t.Run("pointer-elements-round-trip", func(t *testing.T) {
+		// Pointers to scalars, to times and to unmarshalers as list, array
+		// and map elements: nil elements become nulls and come back nil, and
+		// the array's element field is nullable so Parquet keeps the null.
+		goCode := `package dummy
+
+import (
+	"net/netip"
+	"time"
+)
+
+type PtrElems struct {
+	Ints   []*int64
+	Times  []*time.Time
+	Addrs  []*netip.Addr
+	Fixed  [2]*int64
+	ByName map[string]*int64
+}
+`
+		tmpDir := setupIntegrationTest(t, goCode, []string{"PtrElems"})
+
+		testCode := `package dummy
+
+import (
+	"net/netip"
+	"testing"
+	"time"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+func TestPointerElementsRoundTrip(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	one, two := int64(1), int64(2)
+	when := time.Date(2026, 3, 4, 5, 6, 7, 8000, time.UTC)
+	addr := netip.MustParseAddr("10.0.0.1")
+	in := PtrElems{
+		Ints:   []*int64{&one, nil, &two},
+		Times:  []*time.Time{&when, nil},
+		Addrs:  []*netip.Addr{nil, &addr},
+		Fixed:  [2]*int64{nil, &two},
+		ByName: map[string]*int64{"set": &one, "nil": nil},
+	}
+
+	fixedField := NewPtrElemsSchema().Field(3)
+	if !fixedField.Type.(*arrow.FixedSizeListType).ElemField().Nullable {
+		t.Fatalf("Fixed element field is not nullable, a nil element could not be a null")
+	}
+
+	writer := NewPtrElemsArrowWriter(pool)
+	defer writer.Release()
+	writer.Append(&in)
+	rec := writer.NewRecordBatch()
+	defer rec.Release()
+
+	reader, err := NewPtrElemsArrowReader(rec)
+	if err != nil {
+		t.Fatalf("NewPtrElemsArrowReader: %v", err)
+	}
+	var got PtrElems
+	reader.LoadRow(0, &got)
+	if errs := reader.Errors(); len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	if len(got.Ints) != 3 || *got.Ints[0] != 1 || got.Ints[1] != nil || *got.Ints[2] != 2 {
+		t.Errorf("Ints = %v, want [1 nil 2]", got.Ints)
+	}
+	if len(got.Times) != 2 || !got.Times[0].Equal(when) || got.Times[1] != nil {
+		t.Errorf("Times = %v, want [%v nil]", got.Times, when)
+	}
+	if len(got.Addrs) != 2 || got.Addrs[0] != nil || *got.Addrs[1] != addr {
+		t.Errorf("Addrs = %v, want [nil %v]", got.Addrs, addr)
+	}
+	if got.Fixed[0] != nil || got.Fixed[1] == nil || *got.Fixed[1] != 2 {
+		t.Errorf("Fixed = %v, want [nil 2]", got.Fixed)
+	}
+	if v := got.ByName["set"]; v == nil || *v != 1 {
+		t.Errorf("ByName[set] = %v, want 1", v)
+	}
+	if v, ok := got.ByName["nil"]; !ok || v != nil {
+		t.Errorf("ByName[nil] = %v (present %v), want a present nil", v, ok)
+	}
+}
+`
+		runInnerTest(t, tmpDir, testCode, "TestPointerElementsRoundTrip")
+	})
+
 	t.Run("list-of-text-marshaler-round-trip", func(t *testing.T) {
 		goCode := `package dummy
 

@@ -139,11 +139,11 @@ type PtrStruct struct {
 					PkgPath: "testpkg",
 					PkgName: "testpkg",
 					Fields: []gencommon.FieldInfo{
-						{Name: "OptInt", GoType: "*int32", IsPointer: true, ArrowType: "arrow.PrimitiveTypes.Int32", ArrowBuilder: "*array.Int32Builder", CastType: "int32", ArrowArrayType: "*array.Int32", ValueMethod: "Value", ZeroExpr: "0"},
-						{Name: "OptFloat", GoType: "*float64", IsPointer: true, ArrowType: "arrow.PrimitiveTypes.Float64", ArrowBuilder: "*array.Float64Builder", CastType: "float64", ArrowArrayType: "*array.Float64", ValueMethod: "Value", ZeroExpr: "0"},
-						{Name: "OptBool", GoType: "*bool", IsPointer: true, ArrowType: "arrow.FixedWidthTypes.Boolean", ArrowBuilder: "*array.BooleanBuilder", CastType: "bool", ArrowArrayType: "*array.Boolean", ValueMethod: "Value", ZeroExpr: "false"},
-						{Name: "OptName", GoType: "*string", IsPointer: true, ArrowType: "arrow.BinaryTypes.String", ArrowBuilder: "*array.StringBuilder", CastType: "string", ArrowArrayType: "*array.String", ValueMethod: "Value", ZeroExpr: `""`},
-						{Name: "OptID", GoType: "*MyID", IsPointer: true, ArrowType: "arrow.PrimitiveTypes.Int32", ArrowBuilder: "*array.Int32Builder", CastType: "int32", ArrowArrayType: "*array.Int32", ValueMethod: "Value", ZeroExpr: "0", TypePkgPath: "testpkg"},
+						{Name: "OptInt", GoType: "*int32", IsPointer: true, ArrowType: "arrow.PrimitiveTypes.Int32", ArrowBuilder: "*array.Int32Builder", CastType: "int32", ArrowArrayType: "*array.Int32", ValueMethod: "Value", ZeroExpr: "nil"},
+						{Name: "OptFloat", GoType: "*float64", IsPointer: true, ArrowType: "arrow.PrimitiveTypes.Float64", ArrowBuilder: "*array.Float64Builder", CastType: "float64", ArrowArrayType: "*array.Float64", ValueMethod: "Value", ZeroExpr: "nil"},
+						{Name: "OptBool", GoType: "*bool", IsPointer: true, ArrowType: "arrow.FixedWidthTypes.Boolean", ArrowBuilder: "*array.BooleanBuilder", CastType: "bool", ArrowArrayType: "*array.Boolean", ValueMethod: "Value", ZeroExpr: "nil"},
+						{Name: "OptName", GoType: "*string", IsPointer: true, ArrowType: "arrow.BinaryTypes.String", ArrowBuilder: "*array.StringBuilder", CastType: "string", ArrowArrayType: "*array.String", ValueMethod: "Value", ZeroExpr: "nil"},
+						{Name: "OptID", GoType: "*MyID", IsPointer: true, ArrowType: "arrow.PrimitiveTypes.Int32", ArrowBuilder: "*array.Int32Builder", CastType: "int32", ArrowArrayType: "*array.Int32", ValueMethod: "Value", ZeroExpr: "nil", TypePkgPath: "testpkg"},
 					},
 				}}, structs)
 			},
