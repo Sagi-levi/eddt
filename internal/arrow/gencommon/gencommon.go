@@ -618,6 +618,25 @@ func ResolveOutputContext(parsedPkgName string, structs []StructInfo, outPkgOver
 		}
 	}
 
+	// A generic instantiation names its type arguments in the Go type
+	// expression the generated code uses, so the package of every type
+	// argument has to be imported as well, not only the packages that
+	// contribute structs.
+	for _, si := range structs {
+		if si.instantiatedType == nil {
+			continue
+		}
+		for _, p := range typeArgPackages(si.instantiatedType) {
+			if _, exists := importMap[p.Path()]; exists {
+				continue
+			}
+			alias := resolveAlias(p.Path())
+			if p.Name() != packageName || alias != "" {
+				importMap[p.Path()] = ImportInfo{Path: p.Path(), Name: p.Name(), Alias: alias}
+			}
+		}
+	}
+
 	// Convert import map to a sorted slice for deterministic output.
 	imports := make([]ImportInfo, 0, len(importMap))
 	for _, imp := range importMap {
@@ -700,6 +719,46 @@ func ResolveOutputContext(parsedPkgName string, structs []StructInfo, outPkgOver
 	FilterUnexportedFields(structs, packageName)
 
 	return packageName, imports, nil
+}
+
+// typeArgPackages returns the packages named by the type arguments of an
+// instantiation, looking through pointers, slices, arrays, maps, aliases and
+// nested instantiations, in first-seen order.
+func typeArgPackages(named *types.Named) []*types.Package {
+	var pkgs []*types.Package
+	seen := map[*types.Package]bool{}
+	var walk func(t types.Type)
+	walk = func(t types.Type) {
+		switch u := t.(type) {
+		case *types.Named:
+			if p := u.Obj().Pkg(); p != nil && !seen[p] {
+				seen[p] = true
+				pkgs = append(pkgs, p)
+			}
+			if args := u.TypeArgs(); args != nil {
+				for i := 0; i < args.Len(); i++ {
+					walk(args.At(i))
+				}
+			}
+		case *types.Alias:
+			walk(types.Unalias(u))
+		case *types.Pointer:
+			walk(u.Elem())
+		case *types.Slice:
+			walk(u.Elem())
+		case *types.Array:
+			walk(u.Elem())
+		case *types.Map:
+			walk(u.Key())
+			walk(u.Elem())
+		}
+	}
+	if args := named.TypeArgs(); args != nil {
+		for i := 0; i < args.Len(); i++ {
+			walk(args.At(i))
+		}
+	}
+	return pkgs
 }
 
 // CollectConvertBackImports walks all struct fields (recursively through

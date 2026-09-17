@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
+	"unicode"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -467,6 +468,17 @@ func fieldInfoFromType(pkg *packages.Package, allPkgs []*packages.Package, name 
 		// Well-known types (time.Time, time.Duration, protobuf types).
 		if fi, ok := resolveWellKnownType(name, t, isPointer); ok {
 			return fi, nil
+		}
+
+		// A generic instantiation met here, as the field of another
+		// instantiation or the element of a named container, must be expanded
+		// the same way as one met in the syntax tree. Resolving it by the
+		// generic's bare name would visit the uninstantiated declaration,
+		// whose type parameters resolve to nothing, and lose every field.
+		if args := t.TypeArgs(); args != nil && args.Len() > 0 {
+			if _, isStruct := t.Underlying().(*types.Struct); isStruct {
+				return fieldInfoFromGenericInstantiation(name, t, isPointer, queue, processed)
+			}
 		}
 
 		switch u := t.Underlying().(type) {
@@ -963,6 +975,10 @@ func derivedInstanceName(named *types.Named) string {
 }
 
 // prettyTypeArg returns a Go-identifier-safe string for a single type argument.
+// A type argument that is itself an instantiation carries its own arguments,
+// so Pair[string, Pair[int32, int32]] and Pair[string, Pair[string, string]]
+// derive different names, and a slice, array or map argument spells out its
+// shape instead of producing brackets the compiler rejects.
 func prettyTypeArg(t types.Type) string {
 	switch u := t.(type) {
 	case *types.Basic:
@@ -970,10 +986,32 @@ func prettyTypeArg(t types.Type) string {
 	case *types.Pointer:
 		return "Ptr" + prettyTypeArg(u.Elem())
 	case *types.Named:
+		if args := u.TypeArgs(); args != nil && args.Len() > 0 {
+			return derivedInstanceName(u)
+		}
 		return u.Obj().Name()
+	case *types.Alias:
+		return prettyTypeArg(types.Unalias(u))
+	case *types.Slice:
+		return "SliceOf" + prettyTypeArg(u.Elem())
+	case *types.Array:
+		return fmt.Sprintf("Array%dOf%s", u.Len(), prettyTypeArg(u.Elem()))
+	case *types.Map:
+		return "MapOf" + prettyTypeArg(u.Key()) + "To" + prettyTypeArg(u.Elem())
 	default:
-		return strings.ReplaceAll(t.String(), ".", "_")
+		return identifierSafe(t.String())
 	}
+}
+
+// identifierSafe replaces every rune that cannot appear in a Go identifier
+// with an underscore.
+func identifierSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		return '_'
+	}, s)
 }
 
 // capitalize returns s with the first byte uppercased (ASCII-only; sufficient for Go type names).
