@@ -2237,6 +2237,76 @@ func TestUnmarshalErrorAccumulation(t *testing.T) {
 		runInnerTest(t, tmpDir, testCode, "TestUnmarshalErrorAccumulation")
 	})
 
+	t.Run("unmarshal-error-in-element-zeroes-it", func(t *testing.T) {
+		// A failed unmarshal of a list element or a map value must leave the
+		// zero value behind, also when the target struct is reused across
+		// rows and already holds the previous row's element there.
+		goCode := `package dummy
+
+import "net/netip"
+
+type AddrRows struct {
+	Addrs  []netip.Addr
+	ByName map[string]netip.Addr
+}
+`
+		tmpDir := setupIntegrationTest(t, goCode, []string{"AddrRows"})
+
+		testCode := `package dummy
+
+import (
+	"net/netip"
+	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+func TestUnmarshalErrorInElementZeroesIt(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	bldr := array.NewRecordBuilder(pool, NewAddrRowsSchema())
+	defer bldr.Release()
+	addrs := bldr.Field(0).(*array.ListBuilder)
+	byName := bldr.Field(1).(*array.MapBuilder)
+	for _, row := range [][]string{{"10.0.0.1", "10.0.0.2"}, {"10.0.0.9", "not-an-ip"}} {
+		addrs.Append(true)
+		for _, a := range row {
+			addrs.ValueBuilder().(*array.StringBuilder).Append(a)
+		}
+		byName.Append(true)
+		byName.KeyBuilder().(*array.StringBuilder).Append("a")
+		byName.ItemBuilder().(*array.StringBuilder).Append(row[1])
+	}
+	rec := bldr.NewRecordBatch()
+	defer rec.Release()
+
+	reader, err := NewAddrRowsArrowReader(rec)
+	if err != nil {
+		t.Fatalf("NewAddrRowsArrowReader: %v", err)
+	}
+	var got AddrRows
+	reader.LoadRow(0, &got)
+	reader.LoadRow(1, &got)
+
+	if len(reader.Errors()) != 2 {
+		t.Fatalf("errors = %v, want one for the list and one for the map", reader.Errors())
+	}
+	if got.Addrs[0] != netip.MustParseAddr("10.0.0.9") {
+		t.Errorf("Addrs[0] = %v, want 10.0.0.9", got.Addrs[0])
+	}
+	if got.Addrs[1] != (netip.Addr{}) {
+		t.Errorf("Addrs[1] = %v after a failed unmarshal over a reused struct, want the zero value", got.Addrs[1])
+	}
+	if v, ok := got.ByName["a"]; !ok || v != (netip.Addr{}) {
+		t.Errorf("ByName[a] = %v (present %v) after a failed unmarshal, want the zero value under the key", v, ok)
+	}
+}
+`
+		runInnerTest(t, tmpDir, testCode, "TestUnmarshalErrorInElementZeroesIt")
+	})
+
 	t.Run("list-of-text-marshaler-round-trip", func(t *testing.T) {
 		goCode := `package dummy
 

@@ -680,6 +680,7 @@ func (r *{{.Name}}ArrowReader) ResetErrors() { r.errs = r.errs[:0] }
 					if err := uv{{$d}}.{{$info.EltInfo.UnmarshalMethod}}({{$childCol}}.Value(idx{{$d}})); err != nil {
 {{- end}}
 						r.errs = append(r.errs, ReadError{Row: i, Field: "{{$name}}", Err: err})
+						{{$target}}[{{$j}}] = {{$info.EltInfo.ZeroExpr}}
 					} else {
 						{{$target}}[{{$j}}] = uv{{$d}}
 					}
@@ -789,6 +790,7 @@ func (r *{{.Name}}ArrowReader) ResetErrors() { r.errs = r.errs[:0] }
 					if err := uv{{$d}}.{{$info.EltInfo.UnmarshalMethod}}({{$childCol}}.Value(idx{{$d}})); err != nil {
 {{- end}}
 						r.errs = append(r.errs, ReadError{Row: i, Field: "{{$name}}", Err: err})
+						{{$target}}[{{$j}}] = {{$info.EltInfo.ZeroExpr}}
 					} else {
 						{{$target}}[{{$j}}] = uv{{$d}}
 					}
@@ -912,6 +914,7 @@ func (r *{{.Name}}ArrowReader) ResetErrors() { r.errs = r.errs[:0] }
 					if err := uv{{$d}}.{{$info.EltInfo.UnmarshalMethod}}(r.col{{$prefix}}Items.Value(midx{{$d}})); err != nil {
 {{- end}}
 						r.errs = append(r.errs, ReadError{Row: i, Field: "{{$name}}", Err: err})
+						{{$target}}[{{$k}}] = {{$info.EltInfo.ZeroExpr}}
 					} else {
 						{{$target}}[{{$k}}] = uv{{$d}}
 					}
