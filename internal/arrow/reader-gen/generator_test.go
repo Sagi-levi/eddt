@@ -647,3 +647,53 @@ type Target struct {
 		})
 	}
 }
+
+// TestGenerator_ReadErrorDeclaredOncePerPackage generates readers for two
+// structs with unmarshal fields in two invocations into the same package
+// and checks that only the first file declares ReadError, so the package
+// compiles.
+func TestGenerator_ReadErrorDeclaredOncePerPackage(t *testing.T) {
+	dir := t.TempDir()
+	code := `package model
+
+import "net/netip"
+
+type First struct {
+	Addr netip.Addr
+}
+
+type Second struct {
+	Peer netip.Addr
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "model.go"), []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module model\n\ngo 1.25.0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// The outputs go to their own directory: the source module has no
+	// arrow dependency, so a generated file next to the source would break
+	// loading it for the second invocation.
+	outDir := filepath.Join(dir, "out")
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range []string{"First", "Second"} {
+		out := filepath.Join(outDir, strings.ToLower(name)+"-arrow-reader.go")
+		if err := NewGenerator([]string{dir}, []string{name}, out, false, nil).Run("model"); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		src, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		declares := strings.Contains(string(src), "type ReadError struct")
+		if declares != (i == 0) {
+			t.Errorf("%s declares ReadError = %v, want %v", name, declares, i == 0)
+		}
+		if !strings.Contains(string(src), "[]ReadError") {
+			t.Errorf("%s does not use ReadError", name)
+		}
+	}
+}

@@ -56,5 +56,6 @@ type templateData struct {
 	Imports            []gencommon.ImportInfo
 	Structs            []gencommon.StructInfo
 	HasUnmarshalFields bool
+	DeclareReadError   bool // false when a companion file in the package already declares ReadError
 	ElidedSchemas      []gencommon.ElidedSchema
 }

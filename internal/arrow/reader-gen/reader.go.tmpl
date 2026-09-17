@@ -18,7 +18,7 @@ import (
 	{{if .Alias}}{{.Alias}} {{end}}"{{.Path}}"
 {{- end}}
 )
-{{- if .HasUnmarshalFields}}
+{{- if .DeclareReadError}}
 
 // ReadError describes a per-row, per-field unmarshal error encountered during LoadRow.
 type ReadError struct {
