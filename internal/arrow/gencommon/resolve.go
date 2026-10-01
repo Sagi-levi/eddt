@@ -683,7 +683,7 @@ func resolveWellKnownType(name string, named *types.Named, isPointer bool) (Fiel
 			IsPointer:          isPointer,
 			ArrowArrayType:     "*array.Timestamp",
 			ValueMethod:        "Value",
-			ConvertBackExpr:    "time.UnixMicro(int64(%s))",
+			ConvertBackExpr:    "time.UnixMicro(int64(%s)).UTC()",
 			ConvertBackImports: []string{"time"},
 			ZeroExpr:           zeroExpr,
 		}, true

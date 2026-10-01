@@ -1779,6 +1779,9 @@ func TestTimeTimeRoundTrip(t *testing.T) {
 	if !got.When.Equal(r1.When) {
 		t.Errorf("row0 When: got %v, want %v", got.When, r1.When)
 	}
+	if got.When.Location() != time.UTC {
+		t.Errorf("row0 When location: got %v, want UTC, the zone the column declares", got.When.Location())
+	}
 	if got.OptWhen == nil || !got.OptWhen.Equal(*r1.OptWhen) {
 		t.Errorf("row0 OptWhen: got %v, want %v", got.OptWhen, r1.OptWhen)
 	}
