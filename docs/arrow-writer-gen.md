@@ -98,6 +98,14 @@ elegantly falls back to standard interfaces in the following priority:
    so an element type from that package with a `String` method is still
    written as a string.
 
+**Stringer types are write-only.** A type whose only method of the three
+is `String`, every enum protoc generates for example, is written as its
+name in a string column. Nothing in Go can turn that name back into the
+value, so the reader skips the field with a warning, see the reader
+manual. The column still reads well in DuckDB and any other consumer of
+the lake. A record that needs the enum back in Go carries a second field
+with the integer value, `StateCode int32` next to `State pb.State`.
+
 **Marshal errors.** `MarshalText` and `MarshalBinary` can fail. When a
 struct holds such a field anywhere, the writer gains `Errors()` and
 `ResetErrors()`, the package gains a `WriteError` type, and a failing field

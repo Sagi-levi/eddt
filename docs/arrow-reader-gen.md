@@ -97,6 +97,12 @@ For types outside provided packages, it looks for standard unmarshalers:
 3. A named slice, map or array with none of these methods is read through
    its underlying type, and the generated file imports its package.
 
+A type with a `String` method and neither unmarshaler, a protoc enum for
+example, is write-only. The writer stores its name, nothing can turn the
+name back into the value, so the reader skips the field, at any depth,
+with a warning at generation time. A record that needs the value back in
+Go carries an integer field next to the enum, which round-trips.
+
 **Note on Unmarshal Safety:** Since `LoadRow` is infallible but unmarshal
 payload contents might be corrupt, generated readers transparently accumulate
 slice-based `ReadError` entries (which trace the affected row, field path, and
