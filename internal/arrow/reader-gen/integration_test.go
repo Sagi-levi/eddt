@@ -3455,16 +3455,16 @@ func TestMissingColumns(t *testing.T) {
 		t.Errorf("Score: got %f, want 0 (zero-init)", got.Score)
 	}
 
-	// Key assertion: "untouched" semantics.
-	// Pre-populate Score with a sentinel value. LoadRow must NOT overwrite it
-	// because the column is missing (skip), unlike a null column (which writes zero).
+	// Key assertion: a missing column zeroes the field. Pre-populate Score
+	// with a sentinel, as a struct reused across rows would carry, and check
+	// LoadRow does not let it through.
 	got.Score = 99.9
 	reader.LoadRow(0, &got)
 	if got.ID != 42 {
 		t.Errorf("ID after reload: got %d, want 42", got.ID)
 	}
-	if got.Score != 99.9 {
-		t.Errorf("Score should be untouched (99.9), got %f — missing column must skip, not zero", got.Score)
+	if got.Score != 0 {
+		t.Errorf("Score should be zero for a missing column, got %f", got.Score)
 	}
 }
 `

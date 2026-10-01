@@ -250,8 +250,9 @@ func ReadEventRecord(record arrow.RecordBatch) {
   definitions.
 * **Schema Evolution / Missing Columns**: If the Arrow Record is missing a
   column that the Go struct defines, `NewXxxArrowReader` initialization
-  gracefully succeeds, but the `LoadRow` bypasses that field, leaving it at its
-  zero or previous initialized value.
+  gracefully succeeds, and `LoadRow` sets that field to its zero value, so a
+  struct reused across rows never carries a value over from a record that
+  had the column.
 * **Invalid Payload Errors**: The loader does not panic on `UnmarshalText` /
   `UnmarshalBinary` failures; it resets the field and buffers the error in
   `.Errors()`.
