@@ -959,6 +959,74 @@ func HasUnmarshalFields(structs []StructInfo) bool {
 	return false
 }
 
+// FieldHasFallibleMarshal reports whether fi, or an element or key under
+// it, is written through MarshalText or MarshalBinary, the two marshal
+// methods that can return an error. String cannot fail. Struct fields are
+// not followed, their own appender records their errors.
+func FieldHasFallibleMarshal(fi *FieldInfo) bool {
+	if fi.MarshalMethod == "MarshalText" || fi.MarshalMethod == "MarshalBinary" {
+		return true
+	}
+	if fi.EltInfo != nil && FieldHasFallibleMarshal(fi.EltInfo) {
+		return true
+	}
+	if fi.KeyInfo != nil && FieldHasFallibleMarshal(fi.KeyInfo) {
+		return true
+	}
+	return false
+}
+
+// HasFallibleMarshalFields reports whether any field across all structs can
+// fail to marshal, see FieldHasFallibleMarshal. Writer-gen uses this to emit
+// the error sink and the WriteError type.
+func HasFallibleMarshalFields(structs []StructInfo) bool {
+	for i := range structs {
+		for j := range structs[i].Fields {
+			if FieldHasFallibleMarshal(&structs[i].Fields[j]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// FieldNeedsErrorPath reports whether the writer template names fi in an
+// error path: fi can fail to marshal, or fi is a struct whose appender
+// receives the sink and whose errors are prefixed with fi's path, or an
+// element under fi is one of those.
+func FieldNeedsErrorPath(fi *FieldInfo) bool {
+	if fi.IsStruct || FieldHasFallibleMarshal(fi) {
+		return true
+	}
+	return fi.EltInfo != nil && FieldNeedsErrorPath(fi.EltInfo)
+}
+
+// FieldsUseErrorSink reports whether the appender for these fields refers
+// to the error sink and the row index at all, see FieldNeedsErrorPath.
+func FieldsUseErrorSink(fields []FieldInfo) bool {
+	for i := range fields {
+		if FieldNeedsErrorPath(&fields[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasElementErrorPaths reports whether a list, array or map element across
+// all structs needs an error path, which the template spells with
+// fmt.Sprintf, so writer-gen imports fmt.
+func HasElementErrorPaths(structs []StructInfo) bool {
+	for i := range structs {
+		for j := range structs[i].Fields {
+			fi := &structs[i].Fields[j]
+			if fi.EltInfo != nil && FieldNeedsErrorPath(fi.EltInfo) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // HasTimestampFields reports whether any field across all structs (recursively
 // through EltInfo/KeyInfo) has a non-empty TimeExpr, i.e. is written as a
 // timestamp column. Writer-gen uses this to import the time and math packages the

@@ -98,6 +98,16 @@ elegantly falls back to standard interfaces in the following priority:
    so an element type from that package with a `String` method is still
    written as a string.
 
+**Marshal errors.** `MarshalText` and `MarshalBinary` can fail. When a
+struct holds such a field anywhere, the writer gains `Errors()` and
+`ResetErrors()`, the package gains a `WriteError` type, and a failing field
+is written as null while `Errors()` records the row within the current
+record batch, the field path and the returned error. The path names a list
+element as `Peers[2]`, a map value as `ByKey[k]` and a nested struct field
+as `Outer.Inner`. A slice taken from `Errors()` keeps its contents across
+`ResetErrors()`. The exported `Append<Name>Struct` helper has no sink and
+drops the error, the nulls stay.
+
 ## Generator Workflow Architecture
 
 Understanding how the generator converts your Go AST into an Arrow schema helps
