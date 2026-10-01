@@ -113,6 +113,7 @@ func (g *Generator) Run(outPkgNameOverride string) error {
 
 	// Collect extra imports needed by ConvertBackExpr (e.g. "time", protobuf packages).
 	imports = gencommon.MergeImports(imports, gencommon.CollectConvertBackImports(structs))
+	imports = gencommon.MergeImports(imports, gencommon.CollectTypePkgImports(structs, packageName))
 
 	// Compute unmarshal flag and collect unmarshal imports (e.g. "net/netip").
 	hasUnmarshal := gencommon.HasUnmarshalFields(structs)

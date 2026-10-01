@@ -2590,6 +2590,63 @@ func TestNilByteSliceIsNull(t *testing.T) {
 		runInnerTest(t, tmpDir, testCode, "TestNilByteSliceIsNull")
 	})
 
+	t.Run("external-named-slice-round-trip", func(t *testing.T) {
+		// sort.IntSlice and sort.StringSlice are named slices from a package
+		// the generator has not loaded, with no marshal methods, so they
+		// resolve through their underlying type.
+		goCode := `package dummy
+
+import "sort"
+
+type Sorted struct {
+	Ints  sort.IntSlice
+	Strs  sort.StringSlice
+	PInts *sort.IntSlice
+}
+`
+		tmpDir := setupIntegrationTest(t, goCode, []string{"Sorted"})
+
+		testCode := `package dummy
+
+import (
+	"reflect"
+	"sort"
+	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+func TestExternalNamedSliceRoundTrip(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	ints := sort.IntSlice{3, 1, 2}
+	in := Sorted{Ints: ints, Strs: sort.StringSlice{"b", "a"}, PInts: &ints}
+	writer := NewSortedArrowWriter(pool)
+	defer writer.Release()
+	writer.Append(&in)
+	writer.Append(&Sorted{})
+	rec := writer.NewRecordBatch()
+	defer rec.Release()
+
+	reader, err := NewSortedArrowReader(rec)
+	if err != nil {
+		t.Fatalf("NewSortedArrowReader: %v", err)
+	}
+	var got Sorted
+	reader.LoadRow(0, &got)
+	if !reflect.DeepEqual(got, in) {
+		t.Errorf("row 0: got %+v, want %+v", got, in)
+	}
+	reader.LoadRow(1, &got)
+	if got.Ints != nil || got.Strs != nil || got.PInts != nil {
+		t.Errorf("row 1: got %+v, want all nil", got)
+	}
+}
+`
+		runInnerTest(t, tmpDir, testCode, "TestExternalNamedSliceRoundTrip")
+	})
+
 	t.Run("list-of-text-marshaler-round-trip", func(t *testing.T) {
 		goCode := `package dummy
 

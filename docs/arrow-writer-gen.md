@@ -92,6 +92,11 @@ elegantly falls back to standard interfaces in the following priority:
 1. `encoding.TextMarshaler`: Mapped to a `String` column.
 2. `fmt.Stringer`: Mapped to a `String` column.
 3. `encoding.BinaryMarshaler`: Mapped to a `Binary` column.
+4. A named slice, map or array with none of these methods, `sort.IntSlice`
+   for example, is unwrapped to its underlying type the way a named
+   container from an input package is. Its elements follow the same rules,
+   so an element type from that package with a `String` method is still
+   written as a string.
 
 ## Generator Workflow Architecture
 

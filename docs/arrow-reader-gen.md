@@ -94,6 +94,8 @@ For types outside provided packages, it looks for standard unmarshalers:
    `UnmarshalText`.
 2. `encoding.BinaryUnmarshaler`: Reads from `Binary` and populates via
    `UnmarshalBinary`.
+3. A named slice, map or array with none of these methods is read through
+   its underlying type, and the generated file imports its package.
 
 **Note on Unmarshal Safety:** Since `LoadRow` is infallible but unmarshal
 payload contents might be corrupt, generated readers transparently accumulate

@@ -73,6 +73,7 @@ type FieldInfo struct {
 	// Cross-package qualification fields — populated by ResolveOutputContext.
 
 	TypePkgPath     string // Import path of the package defining this named type (non-struct); empty for bare primitives and well-known types
+	TypePkgName     string // Name of that package, used to qualify the type when the package contributes no struct and so is not in the import map
 	QualifiedGoType string // Fully-qualified GoType for reader templates; equals GoType when no qualification is needed
 }
 
@@ -789,7 +790,7 @@ func ResolveOutputContext(parsedPkgName string, structs []StructInfo, outPkgOver
 	// Compute QualifiedGoType on all fields (recursively).
 	for i := range structs {
 		for j := range structs[i].Fields {
-			setQualifiedGoTypes(&structs[i].Fields[j], importMap, goTypeExprs)
+			setQualifiedGoTypes(&structs[i].Fields[j], importMap, goTypeExprs, packageName)
 		}
 	}
 
@@ -902,6 +903,36 @@ func CollectUnmarshalImports(structs []StructInfo) []ImportInfo {
 	return result
 }
 
+// CollectTypePkgImports walks all struct fields (recursively through
+// EltInfo/KeyInfo) and returns the packages of named non-struct types that
+// the generated reader names and that are not the output package. A package
+// that also contributes a struct is imported already, MergeImports drops
+// the duplicate.
+func CollectTypePkgImports(structs []StructInfo, packageName string) []ImportInfo {
+	seen := map[string]bool{}
+	var result []ImportInfo
+	var walk func(fi *FieldInfo)
+	walk = func(fi *FieldInfo) {
+		if fi.TypePkgPath != "" && fi.TypePkgName != "" && fi.TypePkgName != packageName && !seen[fi.TypePkgPath] {
+			seen[fi.TypePkgPath] = true
+			result = append(result, ImportInfo{Path: fi.TypePkgPath, Name: fi.TypePkgName})
+		}
+		if fi.EltInfo != nil {
+			walk(fi.EltInfo)
+		}
+		if fi.KeyInfo != nil {
+			walk(fi.KeyInfo)
+		}
+	}
+	for i := range structs {
+		for j := range structs[i].Fields {
+			walk(&structs[i].Fields[j])
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
+	return result
+}
+
 // HasUnmarshalFields reports whether any field across all structs (recursively
 // through EltInfo/KeyInfo) has a non-empty UnmarshalMethod.
 func HasUnmarshalFields(structs []StructInfo) bool {
@@ -974,22 +1005,31 @@ func setStructQualifiers(fi *FieldInfo, qualifiers map[string]string) {
 // and all its children (EltInfo, KeyInfo). It uses the importMap to qualify
 // named non-struct types, StructQualifier for regular struct types, and
 // goTypeExprs for generic struct instantiations (e.g. "FieldDelta[int32]").
-func setQualifiedGoTypes(fi *FieldInfo, importMap map[string]ImportInfo, goTypeExprs map[string]string) {
+func setQualifiedGoTypes(fi *FieldInfo, importMap map[string]ImportInfo, goTypeExprs map[string]string, packageName string) {
 	// Recurse children first so their QualifiedGoType is available for composition.
 	if fi.EltInfo != nil {
-		setQualifiedGoTypes(fi.EltInfo, importMap, goTypeExprs)
+		setQualifiedGoTypes(fi.EltInfo, importMap, goTypeExprs, packageName)
 	}
 	if fi.KeyInfo != nil {
-		setQualifiedGoTypes(fi.KeyInfo, importMap, goTypeExprs)
+		setQualifiedGoTypes(fi.KeyInfo, importMap, goTypeExprs, packageName)
 	}
 
-	// Named non-struct type with a known package — qualify via importMap.
+	// Named non-struct type with a known package: qualify via importMap, or
+	// by the package's own name when the package contributes no struct and
+	// so is absent from the map. The reader imports such a package through
+	// CollectTypePkgImports. A named container from the output package falls
+	// through to the composition below, the unnamed type is assignable.
 	if fi.TypePkgPath != "" {
+		qualifier := ""
 		if imp, ok := importMap[fi.TypePkgPath]; ok {
-			qualifier := imp.Name
+			qualifier = imp.Name
 			if imp.Alias != "" {
 				qualifier = imp.Alias
 			}
+		} else if fi.TypePkgName != "" && fi.TypePkgName != packageName {
+			qualifier = fi.TypePkgName
+		}
+		if qualifier != "" {
 			// Strip any leading "*" from GoType, qualify, then re-add.
 			base := fi.GoType
 			prefix := ""

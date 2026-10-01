@@ -20,6 +20,42 @@ func pkgPathOf(obj types.Object) string {
 	return ""
 }
 
+// pkgNameOf returns the name of the package that defines obj, or "" if obj
+// has no associated package.
+func pkgNameOf(obj types.Object) string {
+	if obj.Pkg() != nil {
+		return obj.Pkg().Name()
+	}
+	return ""
+}
+
+// unwrapExternalNamed resolves a named slice, map or array type from a
+// package the generator has not loaded the way a local named container is
+// resolved: through its underlying type, keeping the named type's name and
+// package for the generated Go code. It returns false for any other type.
+func unwrapExternalNamed(pkg *packages.Package, allPkgs []*packages.Package, name string, typ types.Type, isPointer bool, queue *[]structRef, processed map[string]bool) (FieldInfo, bool, error) {
+	named, ok := typ.(*types.Named)
+	if !ok || named.Obj().Pkg() == nil {
+		return FieldInfo{}, false, nil
+	}
+	switch named.Underlying().(type) {
+	case *types.Slice, *types.Map, *types.Array:
+	default:
+		return FieldInfo{}, false, nil
+	}
+	fi, err := fieldInfoFromType(pkg, allPkgs, name, named.Underlying(), isPointer, queue, processed)
+	if err != nil {
+		return FieldInfo{}, true, fmt.Errorf("external named type %s: %w", named.Obj().Name(), err)
+	}
+	fi.GoType = named.Obj().Name()
+	if isPointer {
+		fi.GoType = "*" + fi.GoType
+	}
+	fi.TypePkgPath = named.Obj().Pkg().Path()
+	fi.TypePkgName = named.Obj().Pkg().Name()
+	return fi, true, nil
+}
+
 // arrowArrayType derives the concrete Arrow array type from the builder type
 // by stripping the "Builder" suffix. E.g. "*array.Int32Builder" → "*array.Int32".
 func arrowArrayType(builder string) string {
@@ -104,10 +140,14 @@ func fieldInfoFromExpr(pkg *packages.Package, allPkgs []*packages.Package, name 
 						return fi, nil
 					}
 				}
-				// External type: fall back to marshal method detection.
+				// External type: fall back to marshal method detection, then
+				// to the underlying type of a named container.
 				method := detectMarshalMethod(typ)
 				if method != "" {
 					return buildMarshalFieldInfo(name, typ, method, true), nil
+				}
+				if fi, ok, err := unwrapExternalNamed(pkg, allPkgs, name, typ, true, queue, processed); ok {
+					return fi, err
 				}
 				return FieldInfo{}, fmt.Errorf("external type *%s does not implement TextMarshaler, Stringer, or BinaryMarshaler", typ)
 			}
@@ -286,12 +326,16 @@ func fieldInfoFromExpr(pkg *packages.Package, allPkgs []*packages.Package, name 
 			}
 		}
 
-		// External type not in any loaded package: fall back to marshal method detection.
+		// External type not in any loaded package: fall back to marshal method
+		// detection, then to the underlying type of a named container.
 		method := detectMarshalMethod(typ)
-		if method == "" {
-			return FieldInfo{}, fmt.Errorf("external type %s does not implement TextMarshaler, Stringer, or BinaryMarshaler", typ)
+		if method != "" {
+			return buildMarshalFieldInfo(name, typ, method, false), nil
 		}
-		return buildMarshalFieldInfo(name, typ, method, false), nil
+		if fi, ok, err := unwrapExternalNamed(pkg, allPkgs, name, typ, false, queue, processed); ok {
+			return fi, err
+		}
+		return FieldInfo{}, fmt.Errorf("external type %s does not implement TextMarshaler, Stringer, or BinaryMarshaler", typ)
 	}
 
 	return FieldInfo{}, fmt.Errorf("unsupported AST expression type: %T", expr)
@@ -342,6 +386,7 @@ func fieldInfoFromIdent(pkg *packages.Package, allPkgs []*packages.Package, name
 					ValueMethod:    "Value",
 					ZeroExpr:       zeroExprForCast(castType, isPointer),
 					TypePkgPath:    pkgPathOf(obj),
+					TypePkgName:    pkgNameOf(obj),
 				}, nil
 			}
 		}
@@ -360,6 +405,7 @@ func fieldInfoFromIdent(pkg *packages.Package, allPkgs []*packages.Package, name
 				fi.GoType = "*" + fi.GoType
 			}
 			fi.TypePkgPath = pkgPathOf(obj)
+			fi.TypePkgName = pkgNameOf(obj)
 			return fi, nil
 		}
 	}
@@ -508,6 +554,15 @@ func fieldInfoFromType(pkg *packages.Package, allPkgs []*packages.Package, name 
 			return FieldInfo{}, fmt.Errorf("external type %s does not implement TextMarshaler, Stringer, or BinaryMarshaler", t)
 
 		case *types.Basic:
+			// A named basic from a package the generator has not loaded keeps
+			// the rule of the AST path: a marshal method wins over the
+			// underlying type, so other.Level with a String method is a
+			// write-only string here as it is as a top-level field.
+			if t.Obj().Pkg() != nil && FindPkgByPath(allPkgs, t.Obj().Pkg().Path()) == nil {
+				if method := detectMarshalMethod(t); method != "" {
+					return buildMarshalFieldInfo(name, t, method, isPointer), nil
+				}
+			}
 			// Build from the underlying type for Arrow metadata, then overlay the
 			// named type's own name so the reader emits T(x) not underlying(x).
 			fi, err := fieldInfoFromBasic(name, u, isPointer)
@@ -522,6 +577,7 @@ func fieldInfoFromType(pkg *packages.Package, allPkgs []*packages.Package, name 
 					fi.GoType = namedName
 				}
 				fi.TypePkgPath = t.Obj().Pkg().Path()
+				fi.TypePkgName = t.Obj().Pkg().Name()
 			}
 			return fi, nil
 
@@ -617,7 +673,10 @@ func fieldInfoFromBasic(name string, basic *types.Basic, isPointer bool) (FieldI
 		return FieldInfo{}, fmt.Errorf("unsupported basic type: %s", basic.Name())
 	}
 
-	goType := castType
+	// The Go type keeps the spelling of the source, int stays int while the
+	// column stores int64, so the reader converts back to a type the
+	// element is assignable to.
+	goType := basic.Name()
 	if isPointer {
 		goType = "*" + goType
 	}

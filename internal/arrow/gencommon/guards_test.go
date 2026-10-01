@@ -276,3 +276,80 @@ func TestParse_WarnsAboutSecondLevelEmbedding(t *testing.T) {
 		t.Errorf("warnings lack %q:\n%s", want, warnings.String())
 	}
 }
+
+const fixtureExternalNamedCode = `package model
+
+import "example.com/genericsfix/model/other"
+
+type Record struct {
+	IDs    other.IDs
+	Tags   other.Tags
+	Codes  other.Codes
+	Levels other.Levels
+	PIDs   *other.IDs
+}
+`
+
+const fixtureExternalNamedOther = `package other
+
+type IDs []int64
+
+type Tags map[string]string
+
+type Code int32
+
+type Codes []Code
+
+type Level int32
+
+func (l Level) String() string { return "level" }
+
+type Levels []Level
+`
+
+// TestParse_UnwrapsExternalNamedContainers checks that a named slice or map
+// from a package the generator has not loaded resolves through its
+// underlying type instead of being refused, that an element named in that
+// package is qualified, that a Stringer element stays write-only, and that
+// the reader learns which package to import.
+func TestParse_UnwrapsExternalNamedContainers(t *testing.T) {
+	modDir := writeModelFixture(t, fixtureExternalNamedCode)
+	otherDir := filepath.Join(modDir, "other")
+	if err := os.MkdirAll(otherDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherDir, "other.go"), []byte(fixtureExternalNamedOther), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgName, _, structs, err := Parse([]string{modDir}, []string{"Record"}, false)
+	if err != nil {
+		t.Fatalf("Parse() returned error: %v", err)
+	}
+	if _, _, err := ResolveOutputContext(pkgName, structs, "", nil, map[string]bool{}); err != nil {
+		t.Fatalf("ResolveOutputContext: %v", err)
+	}
+	fields := map[string]FieldInfo{}
+	for _, f := range structs[0].Fields {
+		fields[f.Name] = f
+	}
+	if f := fields["IDs"]; !f.IsList || f.QualifiedGoType != "other.IDs" {
+		t.Errorf("IDs = %+v, want a list typed other.IDs", f)
+	}
+	if f := fields["Tags"]; !f.IsMap || f.QualifiedGoType != "other.Tags" {
+		t.Errorf("Tags = %+v, want a map typed other.Tags", f)
+	}
+	if f := fields["Codes"]; !f.IsList || f.EltInfo == nil || f.EltInfo.QualifiedGoType != "other.Code" || f.EltInfo.ArrowType != "arrow.PrimitiveTypes.Int32" {
+		t.Errorf("Codes = %+v (elt %+v), want a list of other.Code stored as Int32", f, f.EltInfo)
+	}
+	if f := fields["Levels"]; !f.IsList || f.EltInfo == nil || f.EltInfo.MarshalMethod != "String" {
+		t.Errorf("Levels = %+v (elt %+v), want a list of Stringer elements", f, f.EltInfo)
+	}
+	if f := fields["PIDs"]; !f.IsList || !f.IsPointer || f.QualifiedGoType != "*other.IDs" {
+		t.Errorf("PIDs = %+v, want a pointer to a list typed *other.IDs", f)
+	}
+	imports := CollectTypePkgImports(structs, pkgName)
+	if len(imports) != 1 || imports[0].Path != "example.com/genericsfix/model/other" || imports[0].Name != "other" {
+		t.Errorf("CollectTypePkgImports = %v, want the other package once", imports)
+	}
+}
