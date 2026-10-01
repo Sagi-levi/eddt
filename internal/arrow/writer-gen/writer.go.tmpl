@@ -170,6 +170,20 @@ func (w *{{.Name}}ArrowWriter) NewRecordBatch() arrow.RecordBatch {
 	{{- else}}
 	{{$bldr}}.({{$info.ArrowBuilder}}).Append({{$info.CastType}}({{$var}}.{{$info.ConvertMethod}}()))
 	{{- end}}
+{{- else if eq $info.CastType "[]byte"}}
+	{{- if $info.IsPointer}}
+	if {{$var}} == nil || *{{$var}} == nil {
+		{{$bldr}}.({{$info.ArrowBuilder}}).AppendNull()
+	} else {
+		{{$bldr}}.({{$info.ArrowBuilder}}).Append([]byte(*{{$var}}))
+	}
+	{{- else}}
+	if {{$var}} == nil {
+		{{$bldr}}.({{$info.ArrowBuilder}}).AppendNull()
+	} else {
+		{{$bldr}}.({{$info.ArrowBuilder}}).Append([]byte({{$var}}))
+	}
+	{{- end}}
 {{- else if and $info.IsPointer $info.EltInfo (not $info.IsList) (not $info.IsMap) (not $info.IsStruct) (not $info.IsFixedSizeList)}}
 	if {{$var}} == nil {
 		{{$bldr}}.({{$info.EltInfo.ArrowBuilder}}).AppendNull()

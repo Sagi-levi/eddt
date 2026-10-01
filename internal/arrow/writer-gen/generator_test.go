@@ -551,6 +551,25 @@ type Event struct {
 			},
 		},
 		{
+			name: "nil-byte-slice-is-null",
+			goCode: `package mypkg
+
+type Payload struct {
+	Data []byte
+}
+`,
+			targetStruct: "Payload",
+			mustContain: []string{
+				`{Name: "Data",`,
+				"if row.Data == nil {",
+				"AppendNull",
+				"Append([]byte(row.Data))",
+			},
+			mustNotContain: []string{
+				"ListBuilder",
+			},
+		},
+		{
 			name: "time-time-as-timestamp",
 			goCode: `package mypkg
 

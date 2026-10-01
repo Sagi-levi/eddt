@@ -2519,6 +2519,77 @@ func TestListOfMapsRoundTrip(t *testing.T) {
 		runInnerTest(t, tmpDir, testCode, "TestListOfMapsRoundTrip")
 	})
 
+	t.Run("nil-byte-slice-is-null", func(t *testing.T) {
+		// A nil []byte is a null, an empty one is an empty value, like every
+		// other slice kind. At the top level, as a list element, behind a
+		// pointer and for a named byte type.
+		goCode := `package dummy
+
+type Blob []byte
+
+type Bytes struct {
+	Payload []byte
+	Chunks  [][]byte
+	PBytes  *[]byte
+	Named   Blob
+}
+`
+		tmpDir := setupIntegrationTest(t, goCode, []string{"Bytes"})
+
+		testCode := `package dummy
+
+import (
+	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+func TestNilByteSliceIsNull(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	empty := []byte{}
+	writer := NewBytesArrowWriter(pool)
+	defer writer.Release()
+	writer.Append(&Bytes{})
+	writer.Append(&Bytes{Payload: empty, Chunks: [][]byte{nil, empty}, PBytes: &empty, Named: Blob{}})
+	rec := writer.NewRecordBatch()
+	defer rec.Release()
+
+	for i, name := range []string{"Payload", "PBytes", "Named"} {
+		col := rec.Column(rec.Schema().FieldIndices(name)[0])
+		if !col.IsNull(0) {
+			t.Errorf("row 0 %s: nil was not written as null", name)
+		}
+		if col.IsNull(1) {
+			t.Errorf("row 1 %s: empty was written as null", name)
+		}
+		_ = i
+	}
+	chunks := rec.Column(rec.Schema().FieldIndices("Chunks")[0]).(*array.List).ListValues()
+	if !chunks.IsNull(0) || chunks.IsNull(1) {
+		t.Errorf("Chunks elements: nil should be null and empty should not, got %v %v", chunks.IsNull(0), chunks.IsNull(1))
+	}
+
+	reader, err := NewBytesArrowReader(rec)
+	if err != nil {
+		t.Fatalf("NewBytesArrowReader: %v", err)
+	}
+	var got Bytes
+	reader.LoadRow(0, &got)
+	if got.Payload != nil || got.PBytes != nil || got.Named != nil || got.Chunks != nil {
+		t.Errorf("row 0 read back non-nil: %+v", got)
+	}
+	reader.LoadRow(1, &got)
+	if got.Payload == nil || got.PBytes == nil || got.Named == nil || len(got.Chunks) != 2 || got.Chunks[0] != nil {
+		t.Errorf("row 1 read back wrong: %+v", got)
+	}
+}
+`
+		runInnerTest(t, tmpDir, testCode, "TestNilByteSliceIsNull")
+	})
+
 	t.Run("list-of-text-marshaler-round-trip", func(t *testing.T) {
 		goCode := `package dummy
 
