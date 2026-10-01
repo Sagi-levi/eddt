@@ -546,7 +546,9 @@ func resolveEmbeddedFields(pkg *packages.Package, allPkgs []*packages.Package, f
 	var fields []FieldInfo
 	for _, embField := range structType.Fields.List {
 		if len(embField.Names) == 0 {
-			// Nested embedding — skip (depth-1 flattening only).
+			// Only one level of embedding is flattened. Say so, otherwise the
+			// fields promoted through this inner embedding go missing silently.
+			warnf("Warning: Skipping the fields %s promotes into %s: only one level of embedding is flattened\n", types.ExprString(embField.Type), structName)
 			continue
 		}
 

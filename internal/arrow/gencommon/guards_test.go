@@ -235,3 +235,44 @@ func TestParse_ResolvesAliasesToTheirTypes(t *testing.T) {
 		t.Errorf("structs = %v, want Local and no LocalAlias", names)
 	}
 }
+
+const fixtureNestedEmbedCode = `package model
+
+type Base struct {
+	BaseField string
+}
+
+type Mid struct {
+	Base
+	MidField string
+}
+
+type Top struct {
+	Mid
+	TopField string
+}
+`
+
+// TestParse_WarnsAboutSecondLevelEmbedding checks that the fields lost to a
+// second level of embedding are named in a warning instead of vanishing.
+func TestParse_WarnsAboutSecondLevelEmbedding(t *testing.T) {
+	modDir := writeModelFixture(t, fixtureNestedEmbedCode)
+	var warnings strings.Builder
+	SetWarnOutput(&warnings)
+	t.Cleanup(func() { SetWarnOutput(os.Stderr) })
+
+	_, _, structs, err := Parse([]string{modDir}, []string{"Top"}, false)
+	if err != nil {
+		t.Fatalf("Parse() returned error: %v", err)
+	}
+	var names []string
+	for _, f := range structs[0].Fields {
+		names = append(names, f.Name)
+	}
+	if strings.Join(names, ",") != "MidField,TopField" {
+		t.Errorf("Top fields = %v, want MidField and TopField", names)
+	}
+	if want := "Skipping the fields Base promotes into Mid: only one level of embedding is flattened"; !strings.Contains(warnings.String(), want) {
+		t.Errorf("warnings lack %q:\n%s", want, warnings.String())
+	}
+}
