@@ -2293,8 +2293,9 @@ func TestUnmarshalErrorInElementZeroesIt(t *testing.T) {
 	reader.LoadRow(0, &got)
 	reader.LoadRow(1, &got)
 
-	if len(reader.Errors()) != 2 {
-		t.Fatalf("errors = %v, want one for the list and one for the map", reader.Errors())
+	errs := reader.Errors()
+	if len(errs) != 2 || errs[0].Field != "Addrs[1]" || errs[1].Field != "ByName[a]" {
+		t.Fatalf("errors = %v, want one for Addrs[1] and one for ByName[a]", errs)
 	}
 	if got.Addrs[0] != netip.MustParseAddr("10.0.0.9") {
 		t.Errorf("Addrs[0] = %v, want 10.0.0.9", got.Addrs[0])
@@ -2308,6 +2309,68 @@ func TestUnmarshalErrorInElementZeroesIt(t *testing.T) {
 }
 `
 		runInnerTest(t, tmpDir, testCode, "TestUnmarshalErrorInElementZeroesIt")
+	})
+
+	t.Run("unmarshal-error-in-struct-element-reports-the-row", func(t *testing.T) {
+		// An element that is itself a struct is loaded through the nested
+		// reader with an offset into the child array. The error it reports
+		// must still carry the row of the record, not that offset.
+		goCode := `package dummy
+
+import "net/netip"
+
+type Holder struct {
+	Addr netip.Addr
+}
+
+type Rows struct {
+	Items []Holder
+}
+`
+		tmpDir := setupIntegrationTest(t, goCode, []string{"Rows"})
+
+		testCode := `package dummy
+
+import (
+	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+func TestUnmarshalErrorInStructElementReportsTheRow(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	bldr := array.NewRecordBuilder(pool, NewRowsSchema())
+	defer bldr.Release()
+	items := bldr.Field(0).(*array.ListBuilder)
+	holder := items.ValueBuilder().(*array.StructBuilder)
+	addr := holder.FieldBuilder(0).(*array.StringBuilder)
+	for _, row := range [][]string{{"10.0.0.1"}, {"10.0.0.2", "not-an-ip"}} {
+		items.Append(true)
+		for _, a := range row {
+			holder.Append(true)
+			addr.Append(a)
+		}
+	}
+	rec := bldr.NewRecordBatch()
+	defer rec.Release()
+
+	reader, err := NewRowsArrowReader(rec)
+	if err != nil {
+		t.Fatalf("NewRowsArrowReader: %v", err)
+	}
+	var got Rows
+	reader.LoadRow(0, &got)
+	reader.LoadRow(1, &got)
+	errs := reader.Errors()
+	if len(errs) != 1 || errs[0].Row != 1 || errs[0].Field != "Items[1].Addr" {
+		t.Fatalf("errors = %v, want one at row 1 for Items[1].Addr", errs)
+	}
+}
+`
+		runInnerTest(t, tmpDir, testCode, "TestUnmarshalErrorInStructElementReportsTheRow")
 	})
 
 	t.Run("pointer-elements-round-trip", func(t *testing.T) {

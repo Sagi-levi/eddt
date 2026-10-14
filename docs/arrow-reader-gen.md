@@ -98,7 +98,8 @@ For types outside provided packages, it looks for standard unmarshalers:
 **Note on Unmarshal Safety:** Since `LoadRow` is infallible but unmarshal
 payload contents might be corrupt, generated readers transparently accumulate
 slice-based `ReadError` entries (which trace the affected row, field path, and
-underlying error) while leaving the target Go field at its zero value. You can
+underlying error) while leaving the target Go field at its zero value. A list
+element is reported as `Field[index]` and a map value as `Field[key]`. You can
 check these safely after processing a batch via `.Errors()`.
 
 ## Generator Workflow Architecture
