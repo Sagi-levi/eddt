@@ -2297,6 +2297,12 @@ func TestUnmarshalErrorInElementZeroesIt(t *testing.T) {
 	if len(errs) != 2 || errs[0].Field != "Addrs[1]" || errs[1].Field != "ByName[a]" {
 		t.Fatalf("errors = %v, want one for Addrs[1] and one for ByName[a]", errs)
 	}
+	held := errs
+	reader.ResetErrors()
+	reader.LoadRow(1, &got)
+	if held[0].Field != "Addrs[1]" || len(reader.Errors()) != 2 {
+		t.Errorf("after ResetErrors the held slice reads %v, want it untouched, and the new errors are %v", held, reader.Errors())
+	}
 	if got.Addrs[0] != netip.MustParseAddr("10.0.0.9") {
 		t.Errorf("Addrs[0] = %v, want 10.0.0.9", got.Addrs[0])
 	}

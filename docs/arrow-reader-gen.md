@@ -100,7 +100,8 @@ payload contents might be corrupt, generated readers transparently accumulate
 slice-based `ReadError` entries (which trace the affected row, field path, and
 underlying error) while leaving the target Go field at its zero value. A list
 element is reported as `Field[index]` and a map value as `Field[key]`. You can
-check these safely after processing a batch via `.Errors()`.
+check these safely after processing a batch via `.Errors()`, and a slice you
+keep from it survives `.ResetErrors()`.
 
 ## Generator Workflow Architecture
 

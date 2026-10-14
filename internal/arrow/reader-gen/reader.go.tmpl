@@ -79,8 +79,9 @@ func (r *{{.Name}}ArrowReader) LoadRow(i int, out *{{if .GoTypeExpr}}{{.GoTypeEx
 // Errors returns unmarshal errors accumulated since the last ResetErrors call.
 func (r *{{.Name}}ArrowReader) Errors() []ReadError { return r.errs }
 
-// ResetErrors clears accumulated unmarshal errors.
-func (r *{{.Name}}ArrowReader) ResetErrors() { r.errs = r.errs[:0] }
+// ResetErrors clears accumulated unmarshal errors. A slice obtained from
+// Errors before the reset keeps its contents.
+func (r *{{.Name}}ArrowReader) ResetErrors() { r.errs = nil }
 {{- end}}
 {{end}}
 {{- define "colField" -}}
