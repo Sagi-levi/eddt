@@ -93,9 +93,6 @@ func (g *Generator) Run(outPkgNameOverride string) error {
 	if err != nil {
 		return err
 	}
-	if err := gencommon.CheckEmpty(structs); err != nil {
-		return err
-	}
 
 	// Elide schema helpers already declared by companion files in the output package.
 	// See internal/arrow/gencommon/output_scan.go for semantics and limitations.
@@ -109,6 +106,12 @@ func (g *Generator) Run(outPkgNameOverride string) error {
 	reserved := map[string]bool{"arrow": true, "array": true, "memory": true}
 	packageName, imports, err := gencommon.ResolveOutputContext(parsedPkgName, structs, outPkgNameOverride, pkgAliases, reserved)
 	if err != nil {
+		return err
+	}
+
+	// A struct with no field left after unexported fields of a foreign
+	// package are dropped would emit a schema Parquet refuses.
+	if err := gencommon.CheckEmpty(structs); err != nil {
 		return err
 	}
 

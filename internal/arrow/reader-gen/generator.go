@@ -76,9 +76,6 @@ func (g *Generator) Run(outPkgNameOverride string) error {
 	if err != nil {
 		return err
 	}
-	if err := gencommon.CheckEmpty(structs); err != nil {
-		return err
-	}
 
 	// Elide schema helpers already declared by companion files in the output package.
 	// See internal/arrow/gencommon/output_scan.go for semantics and limitations.
@@ -109,6 +106,13 @@ func (g *Generator) Run(outPkgNameOverride string) error {
 			kept = append(kept, f)
 		}
 		structs[i].Fields = kept
+	}
+
+	// A struct with nothing left to read, after unexported fields and
+	// write-only fields are gone, has no reader worth emitting, and the
+	// template would emit one that does not compile.
+	if err := gencommon.CheckEmpty(structs); err != nil {
+		return err
 	}
 
 	// Collect extra imports needed by ConvertBackExpr (e.g. "time", protobuf packages).
